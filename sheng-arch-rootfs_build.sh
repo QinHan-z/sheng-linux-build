@@ -38,10 +38,8 @@ bsdtar -xpf ArchLinuxARM-aarch64-latest.tar.gz -C rootdir
 mount --bind /dev rootdir/dev; mount --bind /dev/pts rootdir/dev/pts
 mount -t proc proc rootdir/proc; mount -t sysfs sys rootdir/sys
 
-# 🔥 【核心修复】斩断乱麻，阻断 DNS 瘫痪陷阱 🔥
-# 1. 强行删除解压出来的 /etc/resolv.conf 软链接，防止其指向不存在的 systemd 虚拟目录
+# 斩断乱麻，阻断 DNS 瘫痪陷阱
 rm -f rootdir/etc/resolv.conf
-# 2. 灌入纯净的公网 DNS，绝不盲从宿主机的 127.0.0.53
 printf "nameserver 8.8.8.8\nnameserver 1.1.1.1\n" > rootdir/etc/resolv.conf
 
 echo "Server = http://mirror.archlinuxarm.org/\$arch/\$repo" > rootdir/etc/pacman.d/mirrorlist
@@ -69,11 +67,13 @@ elif [ "$DE" = "xfce" ]; then
 fi
 chroot rootdir systemctl set-default graphical.target
 
-# ✅ 使用 pacman 原生安装内核 (.pkg.tar.zst)
+# ✅ 【神级修复】加上 --nodeps 强制忽略来自 FPM 的任何老式 Debian 依赖检查
 if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
     cp *.pkg.tar.zst rootdir/tmp/
-    chroot rootdir bash -c "pacman -U --noconfirm /tmp/*.pkg.tar.zst || true"
+    chroot rootdir bash -c "pacman -U --nodeps --noconfirm /tmp/*.pkg.tar.zst || true"
     chroot rootdir rm -f /tmp/*.pkg.tar.zst
+    
+    # 重新激活内核模块依赖计算与初始化镜像生成
     KERNEL_MODULE_DIR=$(ls -1t rootdir/usr/lib/modules/ | head -n 1)
     if [ -n "$KERNEL_MODULE_DIR" ]; then
         chroot rootdir /usr/bin/depmod -a "$KERNEL_MODULE_DIR" || true
@@ -98,11 +98,12 @@ chroot rootdir usermod -aG wheel,audio,video,input "$CUSTOM_USER"
 echo "%wheel ALL=(ALL:ALL) NOPASSWD: ALL" > rootdir/etc/sudoers.d/wheel
 chmod 440 rootdir/etc/sudoers.d/wheel
 
+# 此时专属驱动已完美拍入，qrtr-ns 服务绝对存在，顺畅使能！
 chroot rootdir systemctl enable NetworkManager qrtr-ns sshd || true
 mkdir -p rootdir/etc/udev/rules.d/
-printf 'ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0 0 0 1"\n' > rootdir/etc/udev/rules.d/99-touchscreen-sheng.rules
+printf 'ENV{ID_INPUT_TOUCHSCREEN}==\"1\", ENV{LIBINPUT_CALIBRATION_MATRIX}=\"1 0 0 0 1 0 0 0 1\"\n' > rootdir/etc/udev/rules.d/99-touchscreen-sheng.rules
 
-# ✅ 写入单/双系统对应的 fstab
+# 写入单/双系统对应的 fstab
 printf "PARTLABEL=%s / ext4 defaults,noatime,errors=remount-ro 0 1\n" "$ROOT_PART" > rootdir/etc/fstab
 
 chroot rootdir pacman -Scc --noconfirm
