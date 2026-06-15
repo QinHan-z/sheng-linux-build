@@ -38,7 +38,12 @@ bsdtar -xpf ArchLinuxARM-aarch64-latest.tar.gz -C rootdir
 mount --bind /dev rootdir/dev; mount --bind /dev/pts rootdir/dev/pts
 mount -t proc proc rootdir/proc; mount -t sysfs sys rootdir/sys
 
-echo "nameserver 8.8.8.8" > rootdir/etc/resolv.conf
+# 🔥 【核心修复】斩断乱麻，阻断 DNS 瘫痪陷阱 🔥
+# 1. 强行删除解压出来的 /etc/resolv.conf 软链接，防止其指向不存在的 systemd 虚拟目录
+rm -f rootdir/etc/resolv.conf
+# 2. 灌入纯净的公网 DNS，绝不盲从宿主机的 127.0.0.53
+printf "nameserver 8.8.8.8\nnameserver 1.1.1.1\n" > rootdir/etc/resolv.conf
+
 echo "Server = http://mirror.archlinuxarm.org/\$arch/\$repo" > rootdir/etc/pacman.d/mirrorlist
 chroot rootdir pacman-key --init; chroot rootdir pacman-key --populate archlinuxarm
 sed -i 's/^#DisableDownloadTimeout/DisableDownloadTimeout/' rootdir/etc/pacman.conf
