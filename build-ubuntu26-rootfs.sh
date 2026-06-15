@@ -5,7 +5,6 @@ IMAGE_SIZE="8G"
 FILESYSTEM_UUID="ee8d3593-59b1-480e-a3b6-4fefb17ee7d8"
 
 UBUNTU_SUITE="resolute"
-# 🚨 已修复: 架构指向 ubuntu-ports
 UBUNTU_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports"
 
 if [ $# -lt 2 ]; then
@@ -42,6 +41,7 @@ printf "deb %s %s-updates main restricted universe multiverse\n" "$UBUNTU_MIRROR
 printf "deb %s %s-security main restricted universe multiverse\n" "$UBUNTU_MIRROR" "$UBUNTU_SUITE" >> rootdir/etc/apt/sources.list
 
 chroot rootdir apt update
+# ✅ 确保包含 openssh-server 并强制启用
 chroot rootdir apt install -y --no-install-recommends \
     systemd sudo vim-tiny wget curl network-manager openssh-server \
     wpasupplicant dbus kmod initramfs-tools
@@ -77,7 +77,7 @@ chroot rootdir usermod -aG sudo,audio,video,render,input,plugdev "$CUSTOM_USER"
 
 chroot rootdir bash -c "echo 'ttyMSM0' >> /etc/securetty"
 ln -sf /lib/systemd/system/getty@.service rootdir/etc/systemd/system/getty.target.wants/getty@ttyMSM0.service
-chroot rootdir systemctl enable systemd-resolved
+chroot rootdir systemctl enable systemd-resolved ssh
 ln -sf /run/systemd/resolve/stub-resolv.conf rootdir/etc/resolv.conf
 
 mkdir -p rootdir/etc/udev/rules.d/
