@@ -5,7 +5,19 @@ FILESYSTEM_UUID="ee8d3593-59b1-480e-a3b6-4fefb17ee7d8"
 
 DISTRO=$1; KERNEL=$2; DE=${3:-gnome}
 CUSTOM_USER=${4:-xiaomi}; CUSTOM_PASS=${5:-123456}
+BOOT_MODE=${6:-dual}
+
+# 解析单双系统启动模式
+if [ "$BOOT_MODE" = "single" ]; then
+    ROOT_PART="userdata"
+    IMG_SUFFIX="singleboot"
+else
+    ROOT_PART="linux"
+    IMG_SUFFIX="dualboot"
+fi
+
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+ROOTFS_IMG="${DISTRO}_${DE}_${IMG_SUFFIX}_${TIMESTAMP}.img"
 
 cleanup_mounts() {
     fuser -k -9 -m rootdir 2>/dev/null || true
@@ -18,7 +30,6 @@ cleanup_mounts() {
 }
 trap cleanup_mounts EXIT ERR INT TERM
 
-ROOTFS_IMG="${DISTRO}_${DE}_${TIMESTAMP}.img"
 rm -f "$ROOTFS_IMG"; truncate -s $IMAGE_SIZE "$ROOTFS_IMG"; mkfs.ext4 -O ^metadata_csum "$ROOTFS_IMG" 
 mkdir -p rootdir; mount -o loop "$ROOTFS_IMG" rootdir
 
@@ -53,7 +64,7 @@ elif [ "$DE" = "xfce" ]; then
 fi
 chroot rootdir systemctl set-default graphical.target
 
-# ✅ 使用 pacman 原生安装内核
+# ✅ 使用 pacman 原生安装内核 (.pkg.tar.zst)
 if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
     cp *.pkg.tar.zst rootdir/tmp/
     chroot rootdir bash -c "pacman -U --noconfirm /tmp/*.pkg.tar.zst || true"
@@ -68,7 +79,7 @@ if ls *.pkg.tar.zst 1> /dev/null 2>&1; then
     fi
 fi
 
-# 处理可能存在的 deb (比如 mesa)
+# 处理可能存在的独立 deb 补充包 (比如 mesa)
 if ls *.deb 1> /dev/null 2>&1; then
     for pkg in *.deb; do dpkg-deb --fsys-tarfile "$pkg" | tar -x --keep-directory-symlink -C rootdir/; done
 fi
@@ -85,9 +96,11 @@ chmod 440 rootdir/etc/sudoers.d/wheel
 chroot rootdir systemctl enable NetworkManager qrtr-ns sshd || true
 mkdir -p rootdir/etc/udev/rules.d/
 printf 'ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0 0 0 1"\n' > rootdir/etc/udev/rules.d/99-touchscreen-sheng.rules
-printf "PARTLABEL=linux / ext4 defaults,noatime,errors=remount-ro 0 1\n" > rootdir/etc/fstab
-chroot rootdir pacman -Scc --noconfirm
 
+# ✅ 写入单/双系统对应的 fstab
+printf "PARTLABEL=%s / ext4 defaults,noatime,errors=remount-ro 0 1\n" "$ROOT_PART" > rootdir/etc/fstab
+
+chroot rootdir pacman -Scc --noconfirm
 cleanup_mounts; tune2fs -U $FILESYSTEM_UUID "$ROOTFS_IMG"
 img2simg "$ROOTFS_IMG" "sparse_${ROOTFS_IMG}"; 7z a "${ROOTFS_IMG%.img}.7z" "sparse_${ROOTFS_IMG}"
 rm -f "$ROOTFS_IMG" "sparse_${ROOTFS_IMG}"
