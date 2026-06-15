@@ -6,8 +6,19 @@ FEDORA_VERSION="44"
 
 DISTRO=$1; KERNEL=$2; DESKTOP_ENV=${3:-gnome}
 CUSTOM_USER=${4:-xiaomi}; CUSTOM_PASS=${5:-123456}
+BOOT_MODE=${6:-dual}
+
+# 解析单双系统启动模式
+if [ "$BOOT_MODE" = "single" ]; then
+    ROOT_PART="userdata"
+    IMG_SUFFIX="singleboot"
+else
+    ROOT_PART="linux"
+    IMG_SUFFIX="dualboot"
+fi
+
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-ROOTFS_IMG="fedora_desktop_${DESKTOP_ENV}_${TIMESTAMP}.img"
+ROOTFS_IMG="fedora_desktop_${DESKTOP_ENV}_${IMG_SUFFIX}_${TIMESTAMP}.img"
 
 rm -rf rootdir || true; truncate -s $IMAGE_SIZE "$ROOTFS_IMG"; mkfs.ext4 "$ROOTFS_IMG"
 mkdir rootdir; mount -o loop "$ROOTFS_IMG" rootdir
@@ -43,7 +54,7 @@ elif [ "$DESKTOP_ENV" = "xfce" ]; then
     chroot rootdir systemctl enable lightdm
 fi
 
-# ✅ 使用 dnf 原生安装内核
+# ✅ 使用 dnf 原生安装内核 (.rpm)
 if ls *.rpm 1> /dev/null 2>&1; then
     cp *.rpm rootdir/tmp/
     chroot rootdir bash -c "dnf -y install /tmp/*.rpm || true"
@@ -68,7 +79,9 @@ mkdir -p rootdir/etc/selinux
 echo "SELINUX=disabled" > rootdir/etc/selinux/config
 chroot rootdir systemctl enable NetworkManager qrtr sshd
 chroot rootdir systemctl set-default graphical.target
-printf "PARTLABEL=linux / ext4 defaults,noatime,errors=remount-ro 0 1\n" > rootdir/etc/fstab
+
+# ✅ 写入单/双系统对应的 fstab
+printf "PARTLABEL=%s / ext4 defaults,noatime,errors=remount-ro 0 1\n" "$ROOT_PART" > rootdir/etc/fstab
 
 chroot rootdir dnf clean all
 fuser -k -9 -m rootdir || true; sleep 2
@@ -76,5 +89,5 @@ umount -l rootdir/dev/pts || true; umount -l rootdir/dev || true; umount -l root
 rm -rf rootdir
 
 tune2fs -U $FILESYSTEM_UUID "$ROOTFS_IMG"
-img2simg "$ROOTFS_IMG" "sparse_${ROOTFS_IMG}"; 7z a "fedora_desktop_${DESKTOP_ENV}_${TIMESTAMP}.7z" "sparse_${ROOTFS_IMG}"
+img2simg "$ROOTFS_IMG" "sparse_${ROOTFS_IMG}"; 7z a "fedora_desktop_${DESKTOP_ENV}_${IMG_SUFFIX}_${TIMESTAMP}.7z" "sparse_${ROOTFS_IMG}"
 rm -f "$ROOTFS_IMG" "sparse_${ROOTFS_IMG}"
