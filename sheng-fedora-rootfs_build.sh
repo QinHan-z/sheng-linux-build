@@ -22,7 +22,7 @@ echo "nameserver 8.8.8.8" > rootdir/etc/resolv.conf
 
 chroot rootdir dnf -y install git gcc make kernel-headers
 chroot rootdir dnf -y update --exclude=kernel-core
-chroot rootdir dnf -y install --exclude=kernel-core systemd sudo vim wget curl tar xz pciutils findutils NetworkManager wpa_supplicant dialog qrtr
+chroot rootdir dnf -y install --exclude=kernel-core systemd sudo vim wget curl tar xz pciutils findutils NetworkManager wpa_supplicant dialog qrtr openssh-server
 
 if [ "$DESKTOP_ENV" = "gnome" ]; then
     chroot rootdir dnf -y install @gnome-desktop --exclude=kernel-core
@@ -36,10 +36,18 @@ elif [ "$DESKTOP_ENV" = "kde" ]; then
     mkdir -p rootdir/etc/sddm.conf.d
     printf "[Autologin]\nUser=$CUSTOM_USER\nSession=plasma\n" > rootdir/etc/sddm.conf.d/autologin.conf
     chroot rootdir systemctl enable sddm
+elif [ "$DESKTOP_ENV" = "xfce" ]; then
+    chroot rootdir dnf -y install @xfce-desktop-environment lightdm --exclude=kernel-core
+    mkdir -p rootdir/etc/lightdm/lightdm.conf.d
+    printf "[Seat:*]\nautologin-user=$CUSTOM_USER\nautologin-user-timeout=0\n" > rootdir/etc/lightdm/lightdm.conf.d/autologin.conf
+    chroot rootdir systemctl enable lightdm
 fi
 
-if ls *.deb 1> /dev/null 2>&1; then
-    for pkg in *.deb; do dpkg-deb --fsys-tarfile "$pkg" | tar -x --keep-directory-symlink -C rootdir/; done
+# ✅ 使用 dnf 原生安装内核
+if ls *.rpm 1> /dev/null 2>&1; then
+    cp *.rpm rootdir/tmp/
+    chroot rootdir bash -c "dnf -y install /tmp/*.rpm || true"
+    chroot rootdir rm -f /tmp/*.rpm
     KERNEL_MODULE_DIR=$(ls -1t rootdir/usr/lib/modules/ | head -n 1)
     if [ -n "$KERNEL_MODULE_DIR" ]; then
         chroot rootdir /usr/sbin/depmod -a "$KERNEL_MODULE_DIR" || true
@@ -58,7 +66,7 @@ chmod 440 rootdir/etc/sudoers.d/wheel
 
 mkdir -p rootdir/etc/selinux
 echo "SELINUX=disabled" > rootdir/etc/selinux/config
-chroot rootdir systemctl enable NetworkManager qrtr
+chroot rootdir systemctl enable NetworkManager qrtr sshd
 chroot rootdir systemctl set-default graphical.target
 printf "PARTLABEL=linux / ext4 defaults,noatime,errors=remount-ro 0 1\n" > rootdir/etc/fstab
 
